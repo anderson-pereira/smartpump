@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "name": "Lavagem completa dos seis canais",
+  "description": "Receita de exemplo que exercita etapas independentes, loops aninhados, ciclos e herança de vazão durante a lavagem dos canais 1 a 6.",
+  "cycles": 1,
+  "flow_rate_ml_min": 1,
+  "steps": [
+    {
+      "channel": 1,
+      "solution": "Água de lavagem — canal 1",
+      "duration_minutes": 0.25
+    },
+    {
+      "channel": 2,
+      "solution": "Água de lavagem — canal 2",
+      "duration_minutes": 0.25
+    },
+    {
+      "channel": 3,
+      "solution": "Água de lavagem — canal 3",
+      "duration_minutes": 0.25
+    },
+    {
+      "name": "Ciclo de lavagem dos seis canais",
+      "cycles": 2,
+      "steps": [
+        {
+          "name": "Canais 1 a 3 — vazão padrão",
+          "cycles": 2,
+          "steps": [
+            {
+              "channel": 1,
+              "solution": "Água de lavagem — canal 1",
+              "duration_minutes": 0.25
+            },
+            {
+              "channel": 2,
+              "solution": "Água de lavagem — canal 2",
+              "duration_minutes": 0.25
+            },
+            {
+              "channel": 3,
+              "solution": "Água de lavagem — canal 3",
+              "duration_minutes": 0.25
+            }
+          ]
+        },
+        {
+          "name": "Canais 4 a 6 — vazão elevada",
+          "cycles": 1,
+          "flow_rate_ml_min": 1.5,
+          "steps": [
+            {
+              "channel": 4,
+              "solution": "Água de lavagem — canal 4",
+              "duration_minutes": 0.25
+            },
+            {
+              "channel": 5,
+              "solution": "Água de lavagem — canal 5",
+              "duration_minutes": 0.25
+            },
+            {
+              "channel": 6,
+              "solution": "Água de lavagem — canal 6",
+              "duration_minutes": 0.25
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "channel": 4,
+      "solution": "Enxágue final — canal 4",
+      "duration_minutes": 0.25
+    },
+    {
+      "channel": 5,
+      "solution": "Enxágue final — canal 5",
+      "duration_minutes": 0.25,
+      "flow_rate_ml_min": 1.5
+    },
+    {
+      "channel": 6,
+      "solution": "Enxágue final — canal 6",
+      "duration_minutes": 0.25,
+      "flow_rate_ml_min": 0.5
+    }
+  ]
+}

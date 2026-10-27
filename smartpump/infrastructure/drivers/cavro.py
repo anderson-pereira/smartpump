@@ -1,6 +1,6 @@
 import time
 
-from config import VALVE_ADDRESS, VALVE_CHANNEL_COUNT
+from smartpump.settings import VALVE_ADDRESS, VALVE_CHANNEL_COUNT
 
 
 CAVRO_VALVE_ERRORS = {
@@ -168,24 +168,7 @@ class CavroValve:
         return True
 
     def home(self):
-        """Run manual valve homing; it is never invoked automatically."""
-        print()
-        print("=" * 60)
-        print("HOMING DA VÁLVULA")
-        print("=" * 60)
-        print()
-        print("A válvula será inicializada e referenciada no canal 1.")
-        print("O movimento será realizado fisicamente pela bomba.")
-        print()
-
-        confirmation = input("Executar homing? [s/N]: ").strip().lower()
-        if confirmation not in ("s", "sim", "y", "yes"):
-            print()
-            print("Homing cancelado.")
-            return False
-
-        print()
-        print("Executando homing...")
+        """Run valve homing after the calling interface confirms the action."""
         response = self.send_command("w1,0R")
         if response is None:
             raise RuntimeError("A bomba não respondeu ao comando de homing.")
@@ -197,13 +180,9 @@ class CavroValve:
 
         self.wait_until_ready(timeout=20)
         channel = self.get_current_channel()
-        print()
-        print("=" * 60)
-        print("HOMING CONCLUÍDO")
-        print("=" * 60)
-        print(f"Canal reportado: {channel}")
-        if channel == "1":
-            print("Referência estabelecida corretamente no canal 1.")
-        else:
-            print("ATENÇÃO: a válvula terminou o homing, mas não reportou o canal 1.")
+        if channel != "1":
+            raise RuntimeError(
+                "A válvula terminou o homing, mas não reportou o canal 1: "
+                f"{channel!r}."
+            )
         return True

@@ -4,7 +4,7 @@
 
 Este documento orienta a continuidade do projeto por um aluno de graduação. O objetivo é executar o controle da válvula Cavro e da bomba Ismatec ISM832 em uma Raspberry Pi, oferecendo uma API REST e uma página Web simples para configuração, operação e acompanhamento pela rede do laboratório.
 
-O código atual está funcional e já foi testado com os dispositivos físicos. O [README.md](README.md) descreve essa implementação. **As funcionalidades e contratos deste guia são propostas para desenvolvimento; ainda não estão implementados.** Os nomes de arquivos da arquitetura também representam a organização futura.
+O código atual está funcional e já foi testado com os dispositivos físicos. O [README.md](../README.md) descreve como instalar e executar a implementação. Este guia continua sendo a referência de evolução e segurança: parte dos contratos já foi implementada, enquanto os itens explicitamente marcados como parciais ou pendentes ainda não devem ser considerados prontos para produção.
 
 A primeira entrega deve permitir:
 
@@ -15,6 +15,40 @@ A primeira entrega deve permitir:
 - Executar receitas com fase inicial, sequência intermediária com loops independentes e fase final.
 - Acompanhar e interromper uma execução, preservando o registro do que ocorreu.
 - Continuar executando na Raspberry Pi se o navegador for fechado ou perder a conexão.
+
+### 1.1. Estado da implementação
+
+A avaliação abaixo confronta este guia com o código atual. “Coberto” significa que existe implementação funcional e testes automatizados relevantes; não substitui a validação física da versão atual.
+
+| Área | Estado | Implementação atual e lacunas principais |
+| --- | --- | --- |
+| Separação de responsabilidades | Coberto | `SmartPump` concentra os casos de uso; portas tipadas separam domínio, drivers, CLI e API; imports não abrem conexões. |
+| Desenvolvimento sem hardware | Coberto | Válvula e bomba simuladas, modo `--mock`, escala de tempo e testes automatizados. |
+| Receitas externas | Parcial | JSON validado, ciclos, loops aninhados, herança de vazão, limites, descoberta dinâmica e gravação atômica estão implementados. O modelo atual usa `steps` e `duration_minutes`, sem as fases `initial/main/final`, IDs persistentes por nó ou descrições obrigatórias em todas as etapas previstas neste guia. |
+| Persistência de receitas | Parcial | CRUD, revisão SHA-256, `If-Match` e confinamento ao diretório estão implementados. Ainda faltam cópia anterior recuperável, metadados de criação/alteração, importação/exportação explícitas e uma política de backup. |
+| Execução | Parcial | Uma única receita roda em thread local, independente do navegador, com pausa, retomada, interrupção e bloqueio dos comandos manuais. O histórico, eventos e cópia imutável da execução ficam apenas em memória e são perdidos ao reiniciar. |
+| API REST | Parcial | Existem status, portas seriais, conexão dos dispositivos, CRUD/prévia de receitas, comandos manuais, confirmações, idempotência em memória e controle de execuções. Faltam configurações persistentes, operações assíncronas avulsas, eventos, autenticação, sessão e o formato uniforme de erros. |
+| Interface Web | Parcial | Operação, dispositivos, biblioteca, edição de etapas/loops, execução e acompanhamento estão integrados à API. Faltam reordenar/mover nós, importação/exportação, prévia calculada pelo servidor, histórico e configurações operacionais completas. |
+| Segurança e implantação | Pendente | Ainda não há autenticação, CSRF, HTTPS, serviço `systemd`, retenção de dados nem recuperação explícita de execução interrompida. |
+| Validação em bancada | Parcial | Os drivers originais foram testados fisicamente, mas a versão integrada Web/API e os novos fluxos de falha, pausa e interrupção precisam de um roteiro de validação próprio. |
+
+Assim, o núcleo funcional previsto pelo guia já existe, mas o projeto ainda não atende todos os critérios de aceite de uma implantação autônoma na Raspberry Pi.
+
+### 1.2. Próximas melhorias recomendadas
+
+Prioridade de segurança e integridade:
+
+1. Persistir `run.json`, o snapshot da receita/configuração e os eventos em JSON Lines; ao reiniciar, marcar a execução anterior como `interrupted` sem retomá-la automaticamente.
+2. Implementar autenticação e sessão local, proteção CSRF e a política de implantação HTTPS/rede restrita.
+3. Persistir configuração desejada e efetiva, com revisão, aplicação confirmada e rollback explícito quando uma reconexão falhar.
+4. Tornar o estado observável mais completo, incluindo leituras desatualizadas, falhas, ações permitidas e motivo dos bloqueios.
+
+Prioridade de uso e manutenção:
+
+1. Permitir reorganizar a árvore da receita com botões de mover para cima/baixo e mover para dentro/fora de loops; arrastar e soltar pode ser oferecido como atalho, mas não deve ser o único mecanismo.
+2. Ao mover um nó, preservar seu identificador, impedir que um loop seja inserido em um descendente próprio e recalcular duração, vazão herdada e validação antes de salvar.
+3. Integrar importação, exportação e prévia do servidor à biblioteca Web.
+4. Reconciliar `docs/api/openapi.yaml` com as rotas realmente expostas e usar o esquema gerado pelo FastAPI como fonte verificável do contrato implementado.
 
 O armazenamento deve continuar simples, em arquivos locais. Não são necessários banco de dados, serviços de nuvem, aplicação de página única com framework complexo ou múltiplos serviços na primeira versão.
 
@@ -284,12 +318,12 @@ Durante uma receita, bloquear seleção manual de canal, homing, partida manual,
 | Conexão de cada dispositivo | `disconnected`, `connecting`, `connected`, `fault` |
 | Válvula | `ready`, `busy`, `unknown`, `fault`; canal atual ou `null`; `homing_required`: `true`, `false` ou `null` |
 | Bomba | `running`, `stopped`, `unknown`, `fault`; velocidade em rpm ou `null` |
-| Execução | `starting`, `running`, `stopping`, `completed`, `stopped`, `failed`, `interrupted` |
+| Execução | `starting`, `running`, `paused`, `stopping`, `completed`, `stopped`, `failed`, `interrupted` |
 | Operação avulsa | `queued`, `running`, `succeeded`, `failed` |
 
 `unknown` significa ausência de informação confiável; não equivale a pronto. `homing_required: null` significa que ainda não foi possível determinar a necessidade. Falhas e mensagens que apenas sugerem homing devem ser apresentadas sem transformar toda falha de comunicação em uma conclusão de que homing é necessário.
 
-Estados de execução seguem `starting → running → completed`, com `stopping → stopped` para interrupção confirmada e `failed` para falhas. `interrupted` identifica uma execução que estava ativa antes da queda ou reinicialização do processo. Não retomar automaticamente uma execução interrompida.
+Estados de execução seguem `starting → running → completed`, com `running ↔ paused` para pausa e retomada, `stopping → stopped` para interrupção confirmada e `failed` para falhas. Em `paused`, a receita continua reservando os dispositivos, o tempo da etapa fica congelado e a bomba controlada permanece parada. `interrupted` identifica uma execução que estava ativa antes da queda ou reinicialização do processo. Não retomar automaticamente uma execução interrompida.
 
 ### 4.3. Sequência de uma etapa
 
@@ -385,6 +419,8 @@ Todos os caminhos abaixo são relativos a `/api/v1`. `C` indica confirmação em
 | `GET /runs` | Listar histórico com filtros e paginação. | Não |
 | `GET /runs/{id}` | Progresso, fase, etapa, iterações, tempos, resultado e cópias usadas. | Não |
 | `GET /runs/{id}/events` | Eventos paginados com cursor. | Não |
+| `POST /runs/{id}/pause` | Pausar a etapa atual, congelar seu tempo e parar a bomba controlada. | C |
+| `POST /runs/{id}/resume` | Retomar a etapa pausada e restaurar a condição programada da bomba. | C |
 | `POST /runs/{id}/stop` | Solicitar interrupção com motivo; resposta assíncrona. | C |
 | `POST /auth/login` | Abrir sessão com credenciais válidas. | Não |
 | `POST /auth/logout` | Encerrar sessão do navegador sem interromper a receita. | Não |
@@ -484,6 +520,8 @@ Uma página com navegação simples entre quatro áreas é suficiente:
 | Configurações | Portas, comunicação, dispositivos habilitados, rótulos de canais, atrasos, limites e aplicação confirmada. |
 
 O editor deve trabalhar com formulários, sem exigir que o usuário escreva JSON. Cada etapa mostra descrição, canal, solução e duração; cada loop mostra descrição, repetições, etapas internas e duração calculada. Oferecer botões de mover para cima/baixo, além de eventual arrastar e soltar, para permitir uso por teclado.
+
+> **Estado atual:** o editor Web permite adicionar, editar e excluir etapas e loops em qualquer nível, mas ainda não permite reordenar irmãos nem mover um item entre a raiz e loops. O indicador numérico exibido nos itens não é, neste momento, um manipulador de arraste. Essa lacuna permanece como requisito aberto.
 
 Antes de iniciar, apresentar a receita completa em árvore, as fases inicial/final destacadas, os loops recolhíveis, as repetições, os totais, o modo da bomba, a política de parada e a revisão que será usada. Uma alteração ainda não salva precisa ser salva como nova revisão antes de iniciar. A prévia deve usar o cálculo do servidor.
 
